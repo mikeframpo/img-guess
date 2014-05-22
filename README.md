@@ -7,5 +7,7 @@ Dependencies:
   * pillow
   
 First time use:
+```
   git submodule init
   git submodule update
+```
