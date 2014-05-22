@@ -1,0 +1,3 @@
+[submodule "Quads"]
+	path = Quads
+	url = https://github.com/fogleman/Quads.git
