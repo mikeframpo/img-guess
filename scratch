@@ -1,0 +1,11 @@
+
+TODO:
+
+* main game logic, Game class
+	function process_state(time, events)
+	state machine, states:
+		STATE_DRAWING,
+		STATE_RESULT,
+	newimage() function to load an image, draw it somewhere on the screen
+	main game loop waits for input,
+	keypressed() function takes a pressed key, if it's 
