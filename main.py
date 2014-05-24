@@ -2,6 +2,8 @@
 import pygame as pg
 import sys
 
+from vector import Vec2d
+
 sys.path.append('Quads')
 from quads import Model
 
@@ -20,7 +22,7 @@ class Game:
         self.prev_draw_time = None
         self.screen = screen
         self.model = ModelIter(path)
-        self.font = pg.font.SysFont('monospace', 45)
+        self.font = pg.font.SysFont('monospace', Game.TEXT_SIZE)
 
         # initial state of the game
         self.state = Game.STATE_NEWGAME
@@ -37,6 +39,14 @@ class Game:
     BG_COLOR = (0, 0, 0)
     TEXT_ANTIALIAS = 1
     TEXT_COLOR = (255, 255, 0)
+    TEXT_SIZE = 45
+
+    CONTROLS_SURFACE_DIMS = Vec2d(250, 250)
+    BUTTONS_BG_COLOR = pg.color.Color('blue')
+    P1_CONTROLS = (pg.K_q, pg.K_w, pg.K_a, pg.K_s)
+    P1_CONTROLS_POS = Vec2d(50, 100)
+    P2_CONTROLS = (pg.K_i, pg.K_o, pg.K_k, pg.K_l)
+    P2_CONTROLS_POS = Vec2d(400, 100)
 
     def draw_text(self, text, loc):
         text_surface = self.font.render(text, Game.TEXT_ANTIALIAS,
@@ -46,7 +56,32 @@ class Game:
     def draw_newgame_screen(self):
         self.screen.fill(Game.BG_COLOR)
         self.draw_text('Start new game (%s)' % chr(self.KEY_NEWGAME), (0,0))
+        self.draw_player_controls('Player 1', Game.P1_CONTROLS,
+                                    Game.P1_CONTROLS_POS)
+        self.draw_player_controls('Player 2', Game.P2_CONTROLS,
+                                    Game.P2_CONTROLS_POS)
         pg.display.flip()
+
+    def draw_player_controls(self, player_text, controls, loc):
+        controls_surface = pg.surface.Surface(Game.CONTROLS_SURFACE_DIMS)
+        controls_surface.fill(Game.BUTTONS_BG_COLOR)
+        curloc = Vec2d(0,0)
+        player_text_surface = self.font.render(player_text,
+                                        Game.TEXT_ANTIALIAS, Game.TEXT_COLOR)
+        controls_surface.blit(player_text_surface, curloc)
+        for ibut, but in enumerate(controls):
+            curloc = curloc + (0, Game.TEXT_SIZE)
+            number_surface = self.font.render('%d. ' % (ibut + 1),
+                                        Game.TEXT_ANTIALIAS, Game.TEXT_COLOR)
+            controls_surface.blit(number_surface, curloc)
+            button_surface = self.font.render(chr(but),
+                                        Game.TEXT_ANTIALIAS, Game.TEXT_COLOR)
+            buttonloc = curloc + (Game.TEXT_SIZE, 0)
+            controls_surface.blit(button_surface, buttonloc)
+            pg.draw.rect(controls_surface, Game.TEXT_COLOR,
+                    pg.Rect(buttonloc, (Game.TEXT_SIZE, Game.TEXT_SIZE)),
+                    3)
+        self.screen.blit(controls_surface, loc)
 
     def process_state(self, time, events):
         nextstate = None
@@ -78,7 +113,7 @@ class Main:
     def __init__(self, path):
         pg.init()
         self.clock = pg.time.Clock()
-        screen = pg.display.set_mode((640, 480))
+        screen = pg.display.set_mode((1280, 960))
         self.game = Game(screen, path)
 
     def mainloop(self):
