@@ -9,3 +9,8 @@ TODO:
 	newimage() function to load an image, draw it somewhere on the screen
 	main game loop waits for input,
 	keypressed() function takes a pressed key, if it's 
+
+* DONE print newgame screen
+* add the bing image load library
+* add a new state for image loading, the completion of this stage is the start-game trigger
+* add controls to the display screen.

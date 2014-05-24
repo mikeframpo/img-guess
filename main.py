@@ -17,11 +17,14 @@ class ModelIter:
 class Game:
 
     def __init__(self, screen, path):
-        self.state = Game.STATE_NEWGAME
         self.prev_draw_time = None
         self.screen = screen
         self.model = ModelIter(path)
-        pass
+        self.font = pg.font.SysFont('monospace', 45)
+
+        # initial state of the game
+        self.state = Game.STATE_NEWGAME
+        self.draw_newgame_screen()
 
     STATE_NEWGAME = 0
     STATE_DRAWING = 1
@@ -29,12 +32,29 @@ class Game:
     IMAGE_RATE = 20
     IMAGE_RATE_MILLIS = 1.0/IMAGE_RATE * 1000 
 
+    KEY_NEWGAME = pg.K_g
+
+    BG_COLOR = (0, 0, 0)
+    TEXT_ANTIALIAS = 1
+    TEXT_COLOR = (255, 255, 0)
+
+    def draw_text(self, text, loc):
+        text_surface = self.font.render(text, Game.TEXT_ANTIALIAS,
+                                        Game.TEXT_COLOR)
+        self.screen.blit(text_surface, loc)
+
+    def draw_newgame_screen(self):
+        self.screen.fill(Game.BG_COLOR)
+        self.draw_text('Start new game (%s)' % chr(self.KEY_NEWGAME), (0,0))
+        pg.display.flip()
+
     def process_state(self, time, events):
+        nextstate = None
+        # process the current state
         if self.state == Game.STATE_NEWGAME:
             for event in events:
-                print(event.type)
-                if event.type == pg.KEYUP:
-                    self.state = Game.STATE_DRAWING
+                if event.type == pg.KEYUP and event.key == self.KEY_NEWGAME:
+                    nextstate = Game.STATE_DRAWING
         elif self.state == Game.STATE_DRAWING:
             assert self.prev_draw_time is None or time > self.prev_draw_time
             if self.prev_draw_time is None \
@@ -44,6 +64,12 @@ class Game:
                 surface = pg.image.fromstring(im.tostring(), im.size, im.mode)
                 self.screen.blit(surface, (0,0))
                 pg.display.flip()
+        # enter the next state
+        if nextstate is not None:
+            if nextstate == Game.STATE_NEWGAME:
+                self.draw_newgame_screen()
+            # set the new state
+            self.state = nextstate
 
 class Main:
 
