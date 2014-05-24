@@ -1,3 +1,6 @@
 [submodule "Quads"]
 	path = Quads
 	url = https://github.com/mikeframpo/Quads.git
+[submodule "pyBingSearchAPI"]
+	path = pyBingSearchAPI
+	url = https://github.com/xthepoet/pyBingSearchAPI.git
