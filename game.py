@@ -2,6 +2,7 @@
 import pygame as pg
 import sys, os
 import urlparse
+import random
 
 from vector import Vec2d
 
@@ -76,9 +77,11 @@ class Game:
         self.draw_newgame_screen()
 
         self.fetcher = BingImageFetcher(Game.KEYPATH)
+        self.load_wordlist(Game.WORDSPATH)
 
     SCREEN_DIMS = Vec2d(960, 720)
-    IMG_DIMS = Vec2d(SCREEN_DIMS.x * 0.8, SCREEN_DIMS.y * 0.7)
+    IMG_DIMS = Vec2d(SCREEN_DIMS.x * 0.8, SCREEN_DIMS.y * 0.6)
+    IMG_YOFFS = 30
 
     STATE_NEWGAME = 0
     STATE_DRAWING = 1
@@ -101,7 +104,27 @@ class Game:
     P2_CONTROLS = (pg.K_i, pg.K_o, pg.K_k, pg.K_l)
     P2_CONTROLS_POS = Vec2d(400, 100)
 
+    WORDS_SURFACE_DIMS = Vec2d(int(SCREEN_DIMS.x/0.4), int(SCREEN_DIMS.y/0.3))
+    WORDS1_LOC = Vec2d(SCREEN_DIMS.x/2 - WORDS_SURFACE_DIMS.x, IMG_DIMS.y)
+    WORDS2_LOC = WORDS1_LOC + Vec2d(WORDS_SURFACE_DIMS.x, 0)
+
     KEYPATH = 'key.txt'
+    WORDSPATH = 'words.txt'
+    
+    NUM_WORDS = 4
+
+    def load_wordlist(self, path):
+        self.wordlist = ['cheese', 'soldier', 'rubiks', 'gloves', 'mouse',
+                'shoes', 'guitar', 'piano']
+
+    def pick_words(self):
+        words = []
+        while len(words) < Game.NUM_WORDS:
+            newword = self.wordlist[random.randint(0, len(self.wordlist) - 1)]
+            if newword in words:
+                continue
+            words.append(newword)
+        return words
 
     def draw_text(self, text, loc):
         text_surface = self.font.render(text, Game.TEXT_ANTIALIAS,
@@ -161,9 +184,31 @@ class Game:
 
         surface = pg.image.fromstring(im_resized.tostring(), im_resized.size,
                                     im_resized.mode)
-        im_loc = Vec2d(Game.SCREEN_DIMS.x/2 - im_newsize.x/2, 30)
+        im_loc = Vec2d(Game.SCREEN_DIMS.x/2 - im_newsize.x/2, Game.IMG_YOFFS)
         self.screen.blit(surface, im_loc)
         pg.display.flip()
+
+    def draw_words_list(self, wordlist, surface_dims, surface_loc):
+        surface = pg.surface.Surface(surface_dims)
+        curloc = Vec2d(0, 0)
+        for listelem in wordlist:
+            text_surface = self.font.render(listelem, Game.TEXT_ANTIALIAS,
+                                        Game.TEXT_COLOR)
+            surface.blit(text_surface, curloc)
+            curloc = curloc + (0, Game.TEXT_SIZE)
+        self.screen.blit(surface, surface_loc)
+
+    def draw_words(self):
+        leftwords = []
+        rightwords = []
+        for i_word, word in enumerate(self.current_words):
+            listelem = '%d. %s' % (i_word, word)
+            if i_word % 2 == 0:
+                leftwords.append(listelem)
+            else:
+                rightwords.append(listelem)
+        self.draw_words_list(leftwords, Game.WORDS_SURFACE_DIMS, Game.WORDS1_LOC)
+        self.draw_words_list(leftwords, Game.WORDS_SURFACE_DIMS, Game.WORDS2_LOC)
 
     def process_state(self, time, events):
         nextstate = None
@@ -192,11 +237,15 @@ class Game:
                 self.draw_newgame_screen()
             if nextstate == Game.STATE_LOADING:
                 self.draw_loading_screen()
-                # TODO: pull a random word out of the wordlist
+                self.current_words = self.pick_words()
+                self.img_word = random.randint(0, Game.NUM_WORDS-1)
                 self.model = None
                 # TODO: catch the exception for a failed fetch
-                imagepath = self.fetcher.fetch_image('flower')
+                imagepath = self.fetcher.fetch_image(
+                                self.current_words[self.img_word])
                 self.model = ModelIter(imagepath)
+            if nextstate == Game.STATE_DRAWING:
+                self.draw_words()
                 
             # set the new state
             self.state = nextstate
