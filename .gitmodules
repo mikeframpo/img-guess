@@ -4,3 +4,6 @@
 [submodule "pyBingSearchAPI"]
 	path = pyBingSearchAPI
 	url = https://github.com/xthepoet/pyBingSearchAPI.git
+[submodule "requests"]
+	path = requests
+	url = https://github.com/kennethreitz/requests.git

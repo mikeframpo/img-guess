@@ -1,11 +1,18 @@
 
 import pygame as pg
-import sys
+import sys, os
+import urlparse
 
 from vector import Vec2d
 
 sys.path.append('Quads')
 from quads import Model
+
+sys.path.append('requests')
+import requests
+
+sys.path.append('pyBingSearchAPI')
+from bing_search_api import BingSearchAPI
 
 class ModelIter:
 
@@ -15,6 +22,41 @@ class ModelIter:
     def step(self):
         self.model.split()
         return self.model.render()
+
+class BingImageFetcher:
+
+    def __init__(self, keypath):
+        keyfile = open(keypath, 'r')
+        key = keyfile.readline().strip()
+        self.bing = BingSearchAPI(key)
+        self.params = {'ImageFilters':'"Face:Face"',
+                  '$format': 'json',
+                  '$top': 10,
+                  '$skip': 0}
+
+    TIMEOUT = 10.0
+    IMG_FILES = 'img'
+
+    def fetch_image(self, word):
+        # note, throws ConnectionError if failed to fetch
+        resp = self.bing.search('image', word, self.params).json()
+        image_results = resp['d']['results'][0]['Image']
+        if len(image_results) == 0:
+            raise Exception('Failed to find any images for query ' + word)
+        image_url = image_results[0]['MediaUrl']
+        req_image = requests.get(image_url, timeout=BingImageFetcher.TIMEOUT)
+        if req_image.status_code != 200:
+            raise Exception('Image request for %s failed to return 200 status'
+                            % image_url)
+        up = urlparse.urlparse(image_url)
+        destfile = os.path.basename(up.path)
+        destpath = os.path.join(BingImageFetcher.IMG_FILES, destfile)
+        if not os.path.isdir(BingImageFetcher.IMG_FILES):
+            os.mkdir(BingImageFetcher.IMG_FILES)
+        imgfile = open(destpath, 'w')
+        imgfile.write(req_image.content)
+        imgfile.close()
+        return destpath
 
 class Game:
 
@@ -127,6 +169,10 @@ class Main:
                 else:
                     events.append(event)
             self.game.process_state(time, events)
+
+def test_bing_search(word):
+    bing = BingImageFetcher('key.txt')
+    return(bing.fetch_image(word))
 
 if __name__ == '__main__':
     args = sys.argv[1:]
