@@ -79,6 +79,8 @@ class Game:
         self.fetcher = BingImageFetcher(Game.KEYPATH)
         self.load_wordlist(Game.WORDSPATH)
 
+        self.score = 0
+
     SCREEN_DIMS = Vec2d(960, 720)
     IMG_DIMS = Vec2d(SCREEN_DIMS.x * 0.8, SCREEN_DIMS.y * 0.6)
     IMG_YOFFS = 30
@@ -99,19 +101,24 @@ class Game:
 
     CONTROLS_SURFACE_DIMS = Vec2d(250, 250)
     BUTTONS_BG_COLOR = pg.color.Color('blue')
+
+    P1 = 1
+    P2 = 2
     P1_CONTROLS = (pg.K_q, pg.K_w, pg.K_a, pg.K_s)
     P1_CONTROLS_POS = Vec2d(50, 100)
     P2_CONTROLS = (pg.K_i, pg.K_o, pg.K_k, pg.K_l)
     P2_CONTROLS_POS = Vec2d(400, 100)
 
-    WORDS_SURFACE_DIMS = Vec2d(int(SCREEN_DIMS.x/0.4), int(SCREEN_DIMS.y/0.3))
-    WORDS1_LOC = Vec2d(SCREEN_DIMS.x/2 - WORDS_SURFACE_DIMS.x, IMG_DIMS.y)
+    WORDS_SURFACE_DIMS = Vec2d(int(SCREEN_DIMS.x*0.4), int(SCREEN_DIMS.y*0.3))
+    WORDS1_LOC = Vec2d(SCREEN_DIMS.x/2 - WORDS_SURFACE_DIMS.x,
+                        IMG_DIMS.y + IMG_YOFFS)
     WORDS2_LOC = WORDS1_LOC + Vec2d(WORDS_SURFACE_DIMS.x, 0)
 
     KEYPATH = 'key.txt'
     WORDSPATH = 'words.txt'
     
     NUM_WORDS = 4
+    SCORE_WIN = 4
 
     def load_wordlist(self, path):
         self.wordlist = ['cheese', 'soldier', 'rubiks', 'gloves', 'mouse',
@@ -168,6 +175,10 @@ class Game:
         self.screen.blit(loading_text, (0,0))
         pg.display.flip()
 
+    def draw_drawing_screen(self):
+        self.screen.fill(self.BG_COLOR)
+        self.draw_words()
+
     def draw_step_drawing_screen(self):
         # draw the words on the screen
         im = self.model.step()
@@ -202,15 +213,35 @@ class Game:
         leftwords = []
         rightwords = []
         for i_word, word in enumerate(self.current_words):
-            listelem = '%d. %s' % (i_word, word)
+            listelem = '%d. %s' % (i_word+1, word)
             if i_word % 2 == 0:
                 leftwords.append(listelem)
             else:
                 rightwords.append(listelem)
-        self.draw_words_list(leftwords, Game.WORDS_SURFACE_DIMS, Game.WORDS1_LOC)
-        self.draw_words_list(leftwords, Game.WORDS_SURFACE_DIMS, Game.WORDS2_LOC)
+        self.draw_words_list(
+                leftwords, Game.WORDS_SURFACE_DIMS, Game.WORDS1_LOC)
+        self.draw_words_list(
+                rightwords, Game.WORDS_SURFACE_DIMS, Game.WORDS2_LOC)
+
+    def key_correct(self, key, controls):
+        idx = controls.index(key)
+        return idx == self.img_word
+
+    def check_winner(self, key):
+        if key in Game.P1_CONTROLS:
+            return Game.P1 if self.key_correct(key, Game.P1_CONTROLS) else Game.P2
+        if key in Game.P2_CONTROLS:
+            return Game.P2 if self.key_correct(key, Game.P2_CONTROLS) else Game.P1
+        assert False
+
+    def update_score(self, winner):
+        if winner == Game.P1:
+            self.score = self.score - 1
+        else:
+            self.score = self.score + 1
 
     def process_state(self, time, events):
+        winner = None
         nextstate = None
 
         # process the current state
@@ -230,6 +261,15 @@ class Game:
                 or (time - self.prev_draw_time) > Game.IMAGE_RATE_MILLIS:
                 self.prev_draw_time = time
                 self.draw_step_drawing_screen()
+            for event in events:
+                if (event.type == pg.KEYDOWN
+                    and (event.key in Game.P1_CONTROLS
+                        or event.key in Game.P2_CONTROLS)):
+                    winner = self.check_winner(event.key)
+                    print('Player %d wins point' % winner)
+                    self.update_score(winner)
+                    print('Score %d' % self.score)
+                    nextstate = Game.STATE_LOADING
 
         # enter the next state
         if nextstate is not None:
@@ -245,7 +285,7 @@ class Game:
                                 self.current_words[self.img_word])
                 self.model = ModelIter(imagepath)
             if nextstate == Game.STATE_DRAWING:
-                self.draw_words()
+                self.draw_drawing_screen()
                 
             # set the new state
             self.state = nextstate
