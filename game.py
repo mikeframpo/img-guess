@@ -63,6 +63,11 @@ class BingImageFetcher:
         imgfile.close()
         return destpath
 
+class TestFetcher:
+
+    def fetch_image(self, word):
+        return 'a.jpg'
+
 class Game:
 
     def __init__(self):
@@ -77,7 +82,9 @@ class Game:
         self.draw_newgame_screen()
 
         self.fetcher = BingImageFetcher(Game.KEYPATH)
+
         self.load_wordlist(Game.WORDSPATH)
+        self.timeout = None
 
         self.score = 0
 
@@ -88,8 +95,9 @@ class Game:
     STATE_NEWGAME = 0
     STATE_DRAWING = 1
     STATE_LOADING = 2
+    STATE_GUESSED = 3
 
-    IMAGE_RATE = 20
+    IMAGE_RATE = 60
     IMAGE_RATE_MILLIS = 1.0/IMAGE_RATE * 1000 
 
     KEY_NEWGAME = pg.K_g
@@ -97,7 +105,7 @@ class Game:
     BG_COLOR = (0, 0, 0)
     TEXT_ANTIALIAS = 1
     TEXT_COLOR = (255, 255, 0)
-    TEXT_SIZE = 45
+    TEXT_SIZE = 30
 
     CONTROLS_SURFACE_DIMS = Vec2d(250, 250)
     BUTTONS_BG_COLOR = pg.color.Color('blue')
@@ -105,14 +113,12 @@ class Game:
     P1 = 1
     P2 = 2
     P1_CONTROLS = (pg.K_q, pg.K_w, pg.K_a, pg.K_s)
-    P1_CONTROLS_POS = Vec2d(50, 100)
     P2_CONTROLS = (pg.K_i, pg.K_o, pg.K_k, pg.K_l)
-    P2_CONTROLS_POS = Vec2d(400, 100)
 
     WORDS_SURFACE_DIMS = Vec2d(int(SCREEN_DIMS.x*0.4), int(SCREEN_DIMS.y*0.3))
-    WORDS1_LOC = Vec2d(SCREEN_DIMS.x/2 - WORDS_SURFACE_DIMS.x,
+    P1_CONTROLS_POS = Vec2d(SCREEN_DIMS.x/2 - WORDS_SURFACE_DIMS.x,
                         IMG_DIMS.y + IMG_YOFFS)
-    WORDS2_LOC = WORDS1_LOC + Vec2d(WORDS_SURFACE_DIMS.x, 0)
+    P2_CONTROLS_POS = P1_CONTROLS_POS + Vec2d(WORDS_SURFACE_DIMS.x, 0)
 
     KEYPATH = 'key.txt'
     WORDSPATH = 'words.txt'
@@ -120,9 +126,15 @@ class Game:
     NUM_WORDS = 4
     SCORE_WIN = 4
 
+    GUESS_TIMEOUT = 2000
+
     def load_wordlist(self, path):
-        self.wordlist = ['cheese', 'soldier', 'rubiks', 'gloves', 'mouse',
-                'shoes', 'guitar', 'piano']
+        wordsfile = open(path)
+        self.wordlist = []
+        for line in wordsfile:
+            self.wordlist.append(line.strip())
+        #self.wordlist = ['cheese', 'soldier', 'rubiks', 'gloves', 'mouse',
+        #        'shoes', 'guitar', 'piano']
 
     def pick_words(self):
         words = []
@@ -175,9 +187,13 @@ class Game:
         self.screen.blit(loading_text, (0,0))
         pg.display.flip()
 
+    def draw_both_player_words(self, pressed=None):
+        self.draw_player_words(Game.P1_CONTROLS, Game.P1_CONTROLS_POS, pressed)
+        self.draw_player_words(Game.P2_CONTROLS, Game.P2_CONTROLS_POS, pressed)
+
     def draw_drawing_screen(self):
         self.screen.fill(self.BG_COLOR)
-        self.draw_words()
+        self.draw_both_player_words()
 
     def draw_step_drawing_screen(self):
         # draw the words on the screen
@@ -199,29 +215,47 @@ class Game:
         self.screen.blit(surface, im_loc)
         pg.display.flip()
 
-    def draw_words_list(self, wordlist, surface_dims, surface_loc):
-        surface = pg.surface.Surface(surface_dims)
-        curloc = Vec2d(0, 0)
+    def draw_words_list(self, surface, wordlist, surface_loc):
+        curloc = Vec2d(surface_loc)
         for listelem in wordlist:
-            text_surface = self.font.render(listelem, Game.TEXT_ANTIALIAS,
+            text_surface = self.font.render(listelem[0], Game.TEXT_ANTIALIAS,
                                         Game.TEXT_COLOR)
-            surface.blit(text_surface, curloc)
-            curloc = curloc + (0, Game.TEXT_SIZE)
-        self.screen.blit(surface, surface_loc)
 
-    def draw_words(self):
+            highlight = listelem[1]
+            if highlight:
+                pg.draw.rect(text_surface, Game.TEXT_COLOR,
+                        pg.Rect((0,0), text_surface.get_size()))
+            surface.blit(text_surface, curloc)
+
+            curloc = curloc + (0, 2*Game.TEXT_SIZE)
+
+    def draw_player_words(self, controls, pos, pressed):
         leftwords = []
         rightwords = []
         for i_word, word in enumerate(self.current_words):
-            listelem = '%d. %s' % (i_word+1, word)
+
+            highlight = False
+            if pressed is not None and controls[i_word] in pressed:
+                highlight = True
+
+            listelem = ('%s. %s' % (chr(controls[i_word]), word), highlight)
             if i_word % 2 == 0:
                 leftwords.append(listelem)
             else:
                 rightwords.append(listelem)
+        surface = pg.surface.Surface(Game.WORDS_SURFACE_DIMS)
         self.draw_words_list(
-                leftwords, Game.WORDS_SURFACE_DIMS, Game.WORDS1_LOC)
+                surface, leftwords, Vec2d(0,0))
         self.draw_words_list(
-                rightwords, Game.WORDS_SURFACE_DIMS, Game.WORDS2_LOC)
+                surface, rightwords, Vec2d(100, Game.TEXT_SIZE))
+        self.screen.blit(surface, pos)
+
+    def draw_guessed_screen(self):
+        text_surface = self.font.render('Guessed', Game.TEXT_ANTIALIAS,
+                                        Game.TEXT_COLOR)
+        self.screen.blit(text_surface, (0,0))
+        self.draw_both_player_words(self.events)
+        pg.display.flip()
 
     def key_correct(self, key, controls):
         idx = controls.index(key)
@@ -265,17 +299,22 @@ class Game:
                 if (event.type == pg.KEYDOWN
                     and (event.key in Game.P1_CONTROLS
                         or event.key in Game.P2_CONTROLS)):
+                    self.events.append(event.key)
                     winner = self.check_winner(event.key)
                     print('Player %d wins point' % winner)
                     self.update_score(winner)
                     print('Score %d' % self.score)
-                    nextstate = Game.STATE_LOADING
+                    nextstate = Game.STATE_GUESSED
+                    self.timeout = time + Game.GUESS_TIMEOUT
+        elif self.state == Game.STATE_GUESSED:
+            if time > self.timeout:
+                nextstate = Game.STATE_LOADING
 
         # enter the next state
         if nextstate is not None:
             if nextstate == Game.STATE_NEWGAME:
                 self.draw_newgame_screen()
-            if nextstate == Game.STATE_LOADING:
+            elif nextstate == Game.STATE_LOADING:
                 self.draw_loading_screen()
                 self.current_words = self.pick_words()
                 self.img_word = random.randint(0, Game.NUM_WORDS-1)
@@ -284,15 +323,18 @@ class Game:
                 imagepath = self.fetcher.fetch_image(
                                 self.current_words[self.img_word])
                 self.model = ModelIter(imagepath)
-            if nextstate == Game.STATE_DRAWING:
+            elif nextstate == Game.STATE_DRAWING:
+                self.events = []
                 self.draw_drawing_screen()
+            elif nextstate == Game.STATE_GUESSED:
+                self.draw_guessed_screen()
                 
             # set the new state
             self.state = nextstate
 
 class Main:
 
-    FRAMERATE = 60
+    FRAMERATE = 120
 
     def __init__(self):
         pg.init()
