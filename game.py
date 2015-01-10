@@ -26,6 +26,8 @@ class ModelIter:
 
 class BingImageFetcher:
 
+    NUM_IMGS = 10
+
     def __init__(self, keypath):
         keyfile = open(keypath, 'r')
         key = keyfile.readline().strip()
@@ -33,7 +35,7 @@ class BingImageFetcher:
         self.params = {
                         #'ImageFilters':'"Face:Face"',
                         '$format': 'json',
-                        '$top': 10,
+                        '$top': self.NUM_IMGS,
                         '$skip': 0}
 
     TIMEOUT = 10.0
@@ -45,7 +47,7 @@ class BingImageFetcher:
         image_results = resp['d']['results'][0]['Image']
         if len(image_results) == 0:
             raise Exception('Failed to find any images for query ' + word)
-        image_url = image_results[0]['MediaUrl']
+        image_url = image_results[random.randint(0, self.NUM_IMGS-1)]['MediaUrl']
         up = urlparse.urlparse(image_url)
         destfile = os.path.basename(up.path)
         destpath = os.path.join(BingImageFetcher.IMG_FILES, destfile)
@@ -76,12 +78,14 @@ class Game:
  
         self.model = None
         self.font = pg.font.SysFont('monospace', Game.TEXT_SIZE)
+        self.font_h1 = pg.font.SysFont('monospace', Game.TEXT_H1_SIZE)
 
         # initial state of the game
         self.state = Game.STATE_NEWGAME
         self.draw_newgame_screen()
 
-        self.fetcher = BingImageFetcher(Game.KEYPATH)
+        #self.fetcher = BingImageFetcher(Game.KEYPATH)
+        self.fetcher = TestFetcher()
 
         self.load_wordlist(Game.WORDSPATH)
         self.timeout = None
@@ -89,8 +93,15 @@ class Game:
         self.score = 0
 
     SCREEN_DIMS = Vec2d(960, 720)
+
+    SCORE_YSIZE = 50
+    SCORE_YOFFS = 10
+    SCORE_SURFACE_DIMS = Vec2d(int(SCREEN_DIMS.x), SCORE_YSIZE)
+    SCORE_XSPACING = 50
+    SCORE_STAR_SIZE = Vec2d(50, 50)
+
     IMG_DIMS = Vec2d(SCREEN_DIMS.x * 0.8, SCREEN_DIMS.y * 0.6)
-    IMG_YOFFS = 30
+    IMG_YOFFS = 10
 
     STATE_NEWGAME = 0
     STATE_DRAWING = 1
@@ -105,7 +116,10 @@ class Game:
     BG_COLOR = (0, 0, 0)
     TEXT_ANTIALIAS = 1
     TEXT_COLOR = (255, 255, 0)
+    TEXT_H1_COLOR = (0, 0, 255)
+
     TEXT_SIZE = 30
+    TEXT_H1_SIZE = 40
 
     CONTROLS_SURFACE_DIMS = Vec2d(250, 250)
     BUTTONS_BG_COLOR = pg.color.Color('blue')
@@ -115,16 +129,17 @@ class Game:
     P1_CONTROLS = (pg.K_q, pg.K_w, pg.K_a, pg.K_s)
     P2_CONTROLS = (pg.K_i, pg.K_o, pg.K_k, pg.K_l)
 
+    CONTROLS_YOFFS = 10
     WORDS_SURFACE_DIMS = Vec2d(int(SCREEN_DIMS.x*0.4), int(SCREEN_DIMS.y*0.3))
     P1_CONTROLS_POS = Vec2d(SCREEN_DIMS.x/2 - WORDS_SURFACE_DIMS.x,
-                        IMG_DIMS.y + IMG_YOFFS)
+        SCORE_YSIZE + SCORE_YOFFS + IMG_DIMS.y + IMG_YOFFS + CONTROLS_YOFFS)
     P2_CONTROLS_POS = P1_CONTROLS_POS + Vec2d(WORDS_SURFACE_DIMS.x, 0)
 
     KEYPATH = 'key.txt'
     WORDSPATH = 'words.txt'
     
     NUM_WORDS = 4
-    SCORE_WIN = 4
+    SCORE_WIN = 5
 
     GUESS_TIMEOUT = 2000
 
@@ -188,12 +203,16 @@ class Game:
         pg.display.flip()
 
     def draw_both_player_words(self, pressed=None):
-        self.draw_player_words(Game.P1_CONTROLS, Game.P1_CONTROLS_POS, pressed)
-        self.draw_player_words(Game.P2_CONTROLS, Game.P2_CONTROLS_POS, pressed)
+        self.draw_player_words(Game.P1_CONTROLS, Game.P1_CONTROLS_POS,
+                                pressed, 'Player 1')
+        self.draw_player_words(Game.P2_CONTROLS, Game.P2_CONTROLS_POS,
+                                pressed, 'Player 2')
 
     def draw_drawing_screen(self):
         self.screen.fill(self.BG_COLOR)
         self.draw_both_player_words()
+        self.draw_scores(0,0)
+        pg.display.flip()
 
     def draw_step_drawing_screen(self):
         # draw the words on the screen
@@ -211,9 +230,30 @@ class Game:
 
         surface = pg.image.fromstring(im_resized.tostring(), im_resized.size,
                                     im_resized.mode)
-        im_loc = Vec2d(Game.SCREEN_DIMS.x/2 - im_newsize.x/2, Game.IMG_YOFFS)
+        im_loc = Vec2d(Game.SCREEN_DIMS.x/2 - im_newsize.x/2,
+                    Game.SCORE_YOFFS + Game.SCORE_YSIZE + Game.IMG_YOFFS)
         self.screen.blit(surface, im_loc)
         pg.display.flip()
+
+    def draw_player_score(self, surface, score, direction, imgprefix):
+        for isc in range(1, Game.SCORE_WIN+1):
+            if score >= isc:
+                imgpath = imgprefix + '_on.png'
+            else:
+                imgpath = imgprefix + '_off.png'
+
+            img = pg.image.load(imgpath)
+            img = pg.transform.smoothscale(img, Game.SCORE_STAR_SIZE)
+            surface.blit(img,
+                (surface.get_width()/2 +
+                    (isc * direction * Game.SCORE_XSPACING), 0))
+
+    def draw_scores(self, p1score, p2score):
+        surface = pg.surface.Surface(Game.SCORE_SURFACE_DIMS)
+        assert p1score <= Game.SCORE_WIN and p2score <= Game.SCORE_WIN
+        self.draw_player_score(surface, p1score, -1.0, 'red')
+        self.draw_player_score(surface, p2score, 1.0, 'blue')
+        self.screen.blit(surface, (0,Game.SCORE_YOFFS))
 
     def draw_words_list(self, surface, wordlist, surface_loc):
         curloc = Vec2d(surface_loc)
@@ -229,7 +269,7 @@ class Game:
 
             curloc = curloc + (0, 2*Game.TEXT_SIZE)
 
-    def draw_player_words(self, controls, pos, pressed):
+    def draw_player_words(self, controls, pos, pressed, pname):
         leftwords = []
         rightwords = []
         for i_word, word in enumerate(self.current_words):
@@ -244,10 +284,14 @@ class Game:
             else:
                 rightwords.append(listelem)
         surface = pg.surface.Surface(Game.WORDS_SURFACE_DIMS)
+        pname_surface = self.font_h1.render(pname, Game.TEXT_ANTIALIAS, Game.TEXT_H1_COLOR)
+        surface.blit(pname_surface, (0,0))
+        
+        yoffs = Game.TEXT_H1_SIZE + 10
         self.draw_words_list(
-                surface, leftwords, Vec2d(0,0))
+                surface, leftwords, Vec2d(0, yoffs))
         self.draw_words_list(
-                surface, rightwords, Vec2d(100, Game.TEXT_SIZE))
+                surface, rightwords, Vec2d(100, Game.TEXT_SIZE + yoffs))
         self.screen.blit(surface, pos)
 
     def draw_guessed_screen(self):
