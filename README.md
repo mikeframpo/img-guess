@@ -5,6 +5,7 @@ Dependencies:
   * python 2.x
   * pygame
   * pillow
+  * gevent
   
 First time use:
 ```

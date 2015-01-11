@@ -12,6 +12,11 @@ from quads import Model
 sys.path.append('requests')
 import requests
 
+sys.path.append('grequests')
+import grequests
+
+import gevent
+
 sys.path.append('pyBingSearchAPI')
 from bing_search_api import BingSearchAPI
 
@@ -23,6 +28,54 @@ class ModelIter:
     def step(self):
         self.model.split()
         return self.model.render()
+
+class AsyncImageFetcher:
+
+    class RequestedImage:
+        def __init__(self, req, iword, path, words):
+            self.req = req
+            self.iword = iword
+            self.path = path
+            self.words = words
+
+    def __init__(self, fetcher):
+        self.requests = {}
+        self.fetched = []
+        self.fetcher = fetcher
+
+    def get_total_images(self):
+        return len(self.requests) + len(self.fetched)
+
+    def queue_fetch_image(self, iword, words):
+        cached, url, destpath = self.fetcher.create_request(words[iword])
+
+        if cached:
+            self.add_to_fetched(AsyncImageFetcher.RequestedImage(
+                                    None, iword, destpath, words))
+        else:
+            # put the request in a structure with the word and extradata
+            if not self.requests.has_key(url):
+                req = grequests.get(url,
+                                    timeout=BingImageFetcher.TIMEOUT,
+                                    hooks={'response': [self.on_response]})
+                self.requests[url] = AsyncImageFetcher.RequestedImage(
+                                        req, iword, destpath, words)
+                grequests.send(req, grequests.Pool(1))
+
+    def add_to_fetched(self, req_image):
+        self.fetched.append(req_image)
+
+    def on_response(self, req, **kwargs):
+        req_image = self.requests.pop(req.url)
+        print('fetched image: ' + req.url)
+        if req.status_code != 200:
+            raise Exception('Image request for %s failed to return 200 status'
+                            % req.url)
+
+        imgfile = open(req_image.path, 'w')
+        imgfile.write(req.content)
+        imgfile.close()
+        self.add_to_fetched(req_image)
 
 class BingImageFetcher:
 
@@ -41,7 +94,7 @@ class BingImageFetcher:
     TIMEOUT = 10.0
     IMG_FILES = 'img'
 
-    def fetch_image(self, word):
+    def create_request(self, word):
         # note, throws ConnectionError if failed to fetch
         resp = self.bing.search('image', word, self.params).json()
         image_results = resp['d']['results'][0]['Image']
@@ -53,17 +106,11 @@ class BingImageFetcher:
         destpath = os.path.join(BingImageFetcher.IMG_FILES, destfile)
         if not os.path.isdir(BingImageFetcher.IMG_FILES):
             os.mkdir(BingImageFetcher.IMG_FILES)
+        is_cached = False
         if os.path.isfile(destpath):
             # if we already have that image then just use the cached version
-            return destpath
-        req_image = requests.get(image_url, timeout=BingImageFetcher.TIMEOUT)
-        if req_image.status_code != 200:
-            raise Exception('Image request for %s failed to return 200 status'
-                            % image_url)
-        imgfile = open(destpath, 'w')
-        imgfile.write(req_image.content)
-        imgfile.close()
-        return destpath
+            is_cached = True
+        return is_cached, image_url, destpath
 
 class TestFetcher:
 
@@ -84,7 +131,8 @@ class Game:
         self.state = Game.STATE_NEWGAME
         self.draw_newgame_screen()
 
-        self.fetcher = BingImageFetcher(Game.KEYPATH)
+        fetcher = BingImageFetcher(Game.KEYPATH)
+        self.async_fetcher = AsyncImageFetcher(fetcher)
         #self.fetcher = TestFetcher()
 
         self.load_wordlist(Game.WORDSPATH)
@@ -142,6 +190,8 @@ class Game:
 
     GUESS_TIMEOUT = 2000
     WINNER_TIMEOUT = 5000
+
+    PREFETCHED_IMAGES = 3
 
     def load_wordlist(self, path):
         wordsfile = open(path)
@@ -337,6 +387,15 @@ class Game:
         winner = None
         nextstate = None
 
+        while self.async_fetcher.get_total_images() < Game.PREFETCHED_IMAGES:
+            words = self.pick_words()
+            iword = random.randint(0, Game.NUM_WORDS-1)
+            self.async_fetcher.queue_fetch_image(iword, words)
+
+        # sleep each game cycle to check if any requests are ready for
+        # processing
+        gevent.sleep(0)
+
         # process the current state
         if self.state == Game.STATE_NEWGAME:
             for event in events:
@@ -344,10 +403,11 @@ class Game:
                     self.new_game()
                     nextstate = Game.STATE_LOADING
         elif self.state == Game.STATE_LOADING:
-            if self.model is None:
-                print('Image fetch failed')
-                nextstate = Game.STATE_LOADING
-            else:
+            if len(self.async_fetcher.fetched) > 0:
+                req_image = self.async_fetcher.fetched.pop(0)
+                self.current_words = req_image.words
+                self.img_word = req_image.iword
+                self.model = ModelIter(req_image.path)
                 nextstate = Game.STATE_DRAWING
         elif self.state == Game.STATE_DRAWING:
             assert self.prev_draw_time is None or time > self.prev_draw_time
@@ -383,13 +443,7 @@ class Game:
                 self.draw_newgame_screen()
             elif nextstate == Game.STATE_LOADING:
                 self.draw_loading_screen()
-                self.current_words = self.pick_words()
-                self.img_word = random.randint(0, Game.NUM_WORDS-1)
                 self.model = None
-                # TODO: catch the exception for a failed fetch
-                imagepath = self.fetcher.fetch_image(
-                                self.current_words[self.img_word])
-                self.model = ModelIter(imagepath)
             elif nextstate == Game.STATE_DRAWING:
                 self.events = []
                 self.draw_drawing_screen()
