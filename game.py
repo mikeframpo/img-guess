@@ -84,13 +84,11 @@ class Game:
         self.state = Game.STATE_NEWGAME
         self.draw_newgame_screen()
 
-        #self.fetcher = BingImageFetcher(Game.KEYPATH)
-        self.fetcher = TestFetcher()
+        self.fetcher = BingImageFetcher(Game.KEYPATH)
+        #self.fetcher = TestFetcher()
 
         self.load_wordlist(Game.WORDSPATH)
         self.timeout = None
-
-        self.score = 0
 
     SCREEN_DIMS = Vec2d(960, 720)
 
@@ -107,6 +105,7 @@ class Game:
     STATE_DRAWING = 1
     STATE_LOADING = 2
     STATE_GUESSED = 3
+    STATE_WINNER = 4
 
     IMAGE_RATE = 60
     IMAGE_RATE_MILLIS = 1.0/IMAGE_RATE * 1000 
@@ -142,6 +141,7 @@ class Game:
     SCORE_WIN = 5
 
     GUESS_TIMEOUT = 2000
+    WINNER_TIMEOUT = 5000
 
     def load_wordlist(self, path):
         wordsfile = open(path)
@@ -164,6 +164,9 @@ class Game:
         text_surface = self.font.render(text, Game.TEXT_ANTIALIAS,
                                         Game.TEXT_COLOR)
         self.screen.blit(text_surface, loc)
+
+    def new_game(self):
+        self.score = 0
 
     def draw_newgame_screen(self):
         self.screen.fill(Game.BG_COLOR)
@@ -208,10 +211,15 @@ class Game:
         self.draw_player_words(Game.P2_CONTROLS, Game.P2_CONTROLS_POS,
                                 pressed, 'Player 2')
 
+    def get_player_scores(self):
+        p1score = max(0, self.score*-1)
+        p2score = max(0, self.score)
+        return (p1score, p2score)
+
     def draw_drawing_screen(self):
         self.screen.fill(self.BG_COLOR)
         self.draw_both_player_words()
-        self.draw_scores(0,0)
+        self.draw_scores(*self.get_player_scores())
         pg.display.flip()
 
     def draw_step_drawing_screen(self):
@@ -301,6 +309,13 @@ class Game:
         self.draw_both_player_words(self.events)
         pg.display.flip()
 
+    def draw_winner_screen(self):
+        text_surface = self.font.render('Player X Wins!', Game.TEXT_ANTIALIAS,
+                                        Game.TEXT_COLOR)
+        self.screen.blit(text_surface,
+            (self.SCREEN_DIMS.x/2,self.SCREEN_DIMS.y/2))
+        pg.display.flip()
+
     def key_correct(self, key, controls):
         idx = controls.index(key)
         return idx == self.img_word
@@ -326,6 +341,7 @@ class Game:
         if self.state == Game.STATE_NEWGAME:
             for event in events:
                 if event.type == pg.KEYUP and event.key == self.KEY_NEWGAME:
+                    self.new_game()
                     nextstate = Game.STATE_LOADING
         elif self.state == Game.STATE_LOADING:
             if self.model is None:
@@ -352,7 +368,14 @@ class Game:
                     self.timeout = time + Game.GUESS_TIMEOUT
         elif self.state == Game.STATE_GUESSED:
             if time > self.timeout:
-                nextstate = Game.STATE_LOADING
+                if self.score == Game.SCORE_WIN:
+                    self.timeout = time + Game.WINNER_TIMEOUT
+                    nextstate = Game.STATE_WINNER
+                else:
+                    nextstate = Game.STATE_LOADING
+        elif self.state == Game.STATE_WINNER:
+            if time > self.timeout:
+                nextstate = Game.STATE_NEWGAME
 
         # enter the next state
         if nextstate is not None:
@@ -372,6 +395,8 @@ class Game:
                 self.draw_drawing_screen()
             elif nextstate == Game.STATE_GUESSED:
                 self.draw_guessed_screen()
+            elif nextstate == Game.STATE_WINNER:
+                self.draw_winner_screen()
                 
             # set the new state
             self.state = nextstate
